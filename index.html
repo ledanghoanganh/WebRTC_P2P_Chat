@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Serverless WebRTC P2P Chat</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 16px; }
+    textarea { width: 100%; height: 80px; }
+    #chatBox { border: 1px solid #ccc; height: 150px; overflow-y: scroll; padding: 8px; margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <h3>WebRTC P2P Chat</h3>
+  <div id="setup">
+    <button onclick="createOffer()">1. Tạo Offer (Máy A)</button>
+    <button onclick="acceptAnswer()">3. Nhập Answer (Máy A)</button>
+    <br><br>
+    <textarea id="sdpBox" placeholder="Dán SDP vào đây..."></textarea>
+    <button onclick="handleIncomingSDP()">2. Xử lý Offer & Tạo Answer (Máy B)</button>
+    <div id="qrcode" style="margin-top: 10px;"></div>
+  </div>
+
+  <hr>
+  <div id="chatBox"></div>
+  <input type="text" id="msgInput" placeholder="Nhập tin nhắn..." disabled>
+  <button id="sendBtn" onclick="sendMessage()" disabled>Gửi</button>
+
+  <script>
+    const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    const pc = new RTCPeerConnection(config);
+    let dataChannel;
+
+    function log(msg) {
+      document.getElementById('chatBox').innerHTML += `<div>${msg}</div>`;
+    }
+
+    function setupDataChannel(channel) {
+      dataChannel = channel;
+      dataChannel.onopen = () => {
+        log("<b>Đã kết nối P2P trực tiếp thành công!</b>");
+        document.getElementById('msgInput').disabled = false;
+        document.getElementById('sendBtn').disabled = false;
+      };
+      dataChannel.onmessage = (e) => log(`<b>Đối phương:</b> ${e.data}`);
+    }
+
+    pc.ondatachannel = (e) => setupDataChannel(e.channel);
+
+    pc.onicecandidate = (e) => {
+      if (!e.candidate) {
+        const sdp = JSON.stringify(pc.localDescription);
+        document.getElementById('sdpBox').value = sdp;
+        document.getElementById('qrcode').innerHTML = "";
+        new QRCode(document.getElementById('qrcode'), { text: sdp, width: 160, height: 160 });
+      }
+    };
+
+    async function createOffer() {
+      setupDataChannel(pc.createDataChannel("chat"));
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+    }
+
+    async function handleIncomingSDP() {
+      const sdp = JSON.parse(document.getElementById('sdpBox').value);
+      await pc.setRemoteDescription(sdp);
+      if (sdp.type === "offer") {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+      }
+    }
+
+    async function acceptAnswer() {
+      const sdp = JSON.parse(document.getElementById('sdpBox').value);
+      await pc.setRemoteDescription(sdp);
+    }
+
+    function sendMessage() {
+      const val = document.getElementById('msgInput').value;
+      dataChannel.send(val);
+      log(`<b>Tôi:</b> ${val}`);
+      document.getElementById('msgInput').value = "";
+    }
+  </script>
+</body>
+</html>
